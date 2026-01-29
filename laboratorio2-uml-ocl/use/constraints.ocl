@@ -1,0 +1,57 @@
+constraints
+
+==============================
+-- 3 INVARIANTES
+==============================
+
+-- Inv #1: Estado válido de Reserva
+context Reserva
+inv EstadoValido:
+    Set{ EstadoReserva::CREADA,
+         EstadoReserva::CONFIRMADA,
+         EstadoReserva::CANCELADA,
+         EstadoReserva::EXPIRADA }->includes(self.estado)
+
+-- Inv #2: Cardinalidad lógica: una reserva debe tener tutor y estudiante
+context Reserva
+inv TieneTutorYEstudiante:
+    not self.tutor.oclIsUndefined() and not self.estudiante.oclIsUndefined()
+
+-- Inv #3: Unicidad: un tutor no puede tener 2 reservas activas en el mismo fechaHora
+context Tutor
+inv NoDobleReservaActivaMismoHorario:
+    self.reservas
+    ->select(r | r.estado <> EstadoReserva::CANCELADA and r.estado <> EstadoReserva::EXPIRADA)
+    ->isUnique(r | r.fechaHora)
+
+==============================
+-- 2 PRECONDICIONES (crear / cancelar)
+==============================
+
+-- Pre #1 (crear): debe existir disponibilidad libre y no debe violar unicidad
+context ReservaService::crearReserva(estudiante : Estudiante, tutor : Tutor, fechaHora : String) : Reserva
+pre PuedeCrearReserva:
+    tutor.disponibilidades->exists(d |
+        d.fechaHora = fechaHora and d.estado = EstadoDisponibilidad::LIBRE
+    )
+    and
+    tutor.reservas
+    ->select(r | r.estado <> EstadoReserva::CANCELADA and r.estado <> EstadoReserva::EXPIRADA)
+    ->forAll(r | r.fechaHora <> fechaHora)
+
+-- Pre #2 (cancelar): solo se puede cancelar una reserva activa
+context ReservaService::cancelarReserva(reserva : Reserva)
+pre PuedeCancelar:
+    reserva.estado = EstadoReserva::CREADA or reserva.estado = EstadoReserva::CONFIRMADA
+
+==============================
+-- 1 POSTCONDICIÓN
+==============================
+
+-- Post #1 (crear): si creas reserva, queda en CREADA y ligada a tutor/estudiante
+context ReservaService::crearReserva(estudiante : Estudiante, tutor : Tutor, fechaHora : String) : Reserva
+post ReservaQuedaCreada:
+    result.estado = EstadoReserva::CREADA and
+    result.fechaHora = fechaHora and
+    result.tutor = tutor and
+    result.estudiante = estudiante
